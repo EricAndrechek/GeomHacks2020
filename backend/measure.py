@@ -4,6 +4,7 @@ import subprocess
 import json
 import math
 import imutils
+import numpy as np
 # import objectifyer
     
 class measure():
@@ -39,7 +40,16 @@ class measure():
                 fontScale = 10
                 fontColor = (255, 255, 255)
                 lineType = 30
-                cv2.rectangle(self.image, (int(mx) - 200, int(my) + 200), (int(mx) + 200, int(my) - 200), (0, 0, 0), -1)
+
+                corns = []
+                for corn in self.corners:
+                    corns.append(list(corn))
+                corn = np.array(corns)
+                mask = np.full((img.shape[0], img.shape[1]), 0, dtype=np.uint8)
+                cv2.fillPoly(mask, [corn], (255, 255, 255))
+                mask = cv2.bitwise_not(mask)
+                self.image = cv2.bitwise_or(self.image, self.image, mask=mask)
+                
                 cv2.putText(self.image, str(item_number), bottomLeftCornerOfText, font, fontScale, fontColor, lineType, cv2.LINE_AA)
             else:
                 self.item = False
@@ -83,6 +93,8 @@ def runner(img_path):
         img = imutils.rotate_bound(img, 90)
     zoom = get_zoom(img_path)
     qr = decode(img)
+    if len(qr) < 2:
+        print('oops, try that picture again, we couldn\'t find all your QR codes.')
     background_depth = None
     items = []
     item_number = 1
@@ -100,7 +112,7 @@ def runner(img_path):
                 # ^ change the above values for the corners of the actual box
                 width = math.sqrt( ((corners[0][0] - corners[1][0]) ** 2) + ((corners[0][1] - corners[1][1]) ** 2) )
                 height = math.sqrt( ((corners[1][0] - corners[2][0]) ** 2) + ((corners[1][1] - corners[2][1]) ** 2) )
-                color = (0, 0, 0)
+                color = (0, 204, 102)
                 thickness = 20
                 cv2.line(img, corners[0], corners[1], color, thickness)
                 cv2.line(img, corners[1], corners[2], color, thickness)
@@ -116,7 +128,7 @@ def runner(img_path):
 
 
 if __name__ == "__main__":
-    img, items = runner('test1.JPG')
+    img, items = runner('test5.JPG')
     print(items)
     cv2.imshow("Image", img)
     cv2.waitKey()
