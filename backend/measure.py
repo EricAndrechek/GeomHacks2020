@@ -24,7 +24,7 @@ class measure():
             width = img.shape[1]
             self.item = True
             if self.txt.split(':')[3] != 'Back':
-                self.draw_circle((255, 0, 0))
+                # self.draw_circle((255, 0, 0))
                 font = cv2.FONT_HERSHEY_SIMPLEX
 
                 my = 0
@@ -34,11 +34,12 @@ class measure():
                     my += p[1]
                 mx = mx / 4
                 my = my / 4
-                bottomLeftCornerOfText = (int(mx) - 20, int(my) - 20)
+                bottomLeftCornerOfText = (int(mx) - 100, int(my) + 100)
 
                 fontScale = 10
                 fontColor = (255, 255, 255)
                 lineType = 30
+                cv2.rectangle(self.image, (int(mx) - 200, int(my) + 200), (int(mx) + 200, int(my) - 200), (0, 0, 0), -1)
                 cv2.putText(self.image, str(item_number), bottomLeftCornerOfText, font, fontScale, fontColor, lineType, cv2.LINE_AA)
             else:
                 self.item = False
@@ -57,12 +58,13 @@ class measure():
         self.points = []
         for corner in self.corners:
             (x2, y2) = corner
-            self.points.append([x2, y2])
+            self.points.append((x2, y2))
+        self.points = tuple(self.points)
         self.image_width = math.sqrt( ((self.points[0][0] - self.points[1][0]) ** 2) + ((self.points[0][1] - self.points[1][1]) ** 2) )
 
     def draw_circle(self, colors):
         for n, p in enumerate(self.points):
-            cv2.circle(self.image, tuple(p), 50, colors, -1)
+            cv2.circle(self.image, p, 50, colors, -1)
 
 def get_zoom(path):
     s = subprocess.Popen(['exiftool', '-G', '-j', 'img-resources/{}'.format(path)], stdout=subprocess.PIPE)
@@ -83,8 +85,7 @@ def runner(img_path):
     qr = decode(img)
     background_depth = None
     items = []
-    total = len(qr)
-    item_number = 0
+    item_number = 1
     for q in qr:
         m = measure(q, img, item_number)
         if m.valid:
@@ -93,15 +94,24 @@ def runner(img_path):
                 # run Jainil code with m.points
                 # expects a width and length in pixels
                 # I'll just use the number of pixels in the QR code for now
-                w = m.image_width
-                h = m.image_width
-                # ^ change the above values for the pixel lengths of the actual box
-                items.append({'item_number': item_number, 'item_width': w * m.scale, 'item_height': h * m.scale, 'item_depth': m.depth})
+                # this is an example of what the data should look like:
+                #       corners = ((0, 10), (0, 20), (14, 20), (10, 10))
+                corners = m.points
+                # ^ change the above values for the corners of the actual box
+                width = math.sqrt( ((corners[0][0] - corners[1][0]) ** 2) + ((corners[0][1] - corners[1][1]) ** 2) )
+                height = math.sqrt( ((corners[1][0] - corners[2][0]) ** 2) + ((corners[1][1] - corners[2][1]) ** 2) )
+                color = (0, 0, 0)
+                thickness = 20
+                cv2.line(img, corners[0], corners[1], color, thickness)
+                cv2.line(img, corners[1], corners[2], color, thickness)
+                cv2.line(img, corners[2], corners[3], color, thickness)
+                cv2.line(img, corners[3], corners[0], color, thickness)
+                items.append({'item_number': item_number, 'item_width': round(width * m.scale, 2), 'item_height': round(height * m.scale, 2), 'item_depth': m.depth})
                 item_number += 1
             else:
                 background_depth = m.depth
     for obj in items:
-        obj['item_depth'] = background_depth - obj['item_depth']
+        obj['item_depth'] = round( background_depth - obj['item_depth'], 2 )
     return img, items
 
 
