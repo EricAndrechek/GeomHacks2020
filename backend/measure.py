@@ -5,6 +5,8 @@ import json
 import math
 import imutils
 import numpy as np
+import base64
+import os
 # import objectifyer
     
 class measure():
@@ -45,11 +47,12 @@ class measure():
                 for corn in self.corners:
                     corns.append(list(corn))
                 corn = np.array(corns)
+
                 mask = np.full((img.shape[0], img.shape[1]), 0, dtype=np.uint8)
                 cv2.fillPoly(mask, [corn], (255, 255, 255))
                 mask = cv2.bitwise_not(mask)
                 self.image = cv2.bitwise_or(self.image, self.image, mask=mask)
-                
+
                 cv2.putText(self.image, str(item_number), bottomLeftCornerOfText, font, fontScale, fontColor, lineType, cv2.LINE_AA)
             else:
                 self.item = False
@@ -76,8 +79,21 @@ class measure():
         for n, p in enumerate(self.points):
             cv2.circle(self.image, p, 50, colors, -1)
 
+
+def read_heic(path, fn):
+    s = subprocess.Popen(['heif-convert', 'images/{}'.format(path), 'images/{}.jpg'.format(fn)], stdout=subprocess.PIPE)
+    s = s.stdout.read().decode().replace('\n', '')
+    print(s)
+
+
+def read_png(path, fn):
+    s = subprocess.Popen(['convert', 'images/{}'.format(path), 'images/{}.jpg'.format(fn)], stdout=subprocess.PIPE)
+    s = s.stdout.read().decode().replace('\n', '')
+    print(s)
+
+
 def get_zoom(path):
-    s = subprocess.Popen(['exiftool', '-G', '-j', 'img-resources/{}'.format(path)], stdout=subprocess.PIPE)
+    s = subprocess.Popen(['exiftool', '-G', '-j', 'images/{}'.format(path)], stdout=subprocess.PIPE)
     s = s.stdout.read().strip()
     s.decode('utf-8').rstrip('\r\n')
     md = json.loads(s)
@@ -88,13 +104,33 @@ def get_zoom(path):
     return zoom
 
 def runner(img_path):
-    img = cv2.imread('img-resources/{}'.format(img_path))
+    og = img_path
+    ft = img_path.split('.')[1].lower()
+    fn = img_path.split('.')[0]
+    if ft == 'heic':
+        read_heic(img_path, fn)
+        img_path = '{}.jpg'.format(fn)
+        ft = 'jpg'
+        os.remove("images/{}".format(og))
+    if ft == 'png':
+        read_png(img_path, fn)
+        img_path = '{}.jpg'.format(fn)
+        ft = 'jpg'
+        os.remove("images/{}".format(og))
+    if ft != 'jpg' and ft != 'jpeg':
+        os.remove("images/{}".format(og))
+        return {'error': 'Unaccepted image filetype {}. Please submit jpg, png, and heic only.'.format(ft)}, img_path
+    img = cv2.imread('images/{}'.format(img_path))
+    try:
+        temp = img.shape[0]
+    except AttributeError:
+        return {'error': 'Could not read image data. Make sure you uploaded a valid image and try again'}, img_path
     if img.shape[1] < img.shape[0]:
         img = imutils.rotate_bound(img, 90)
     zoom = get_zoom(img_path)
     qr = decode(img)
     if len(qr) < 2:
-        print('oops, try that picture again, we couldn\'t find all your QR codes.')
+        return {'error': 'Oops, try that picture again, we couldn\'t find all your QR codes.'}, img_path
     background_depth = None
     items = []
     item_number = 1
@@ -124,12 +160,22 @@ def runner(img_path):
                 background_depth = m.depth
     for obj in items:
         obj['item_depth'] = round( background_depth - obj['item_depth'], 2 )
-    return img, items
+    _, im_arr = cv2.imencode('.jpg', img)
+    im_bytes = im_arr.tobytes()
+    im_b64 = base64.b64encode(im_bytes)
+    data = {'image': im_b64.decode(), 'objects': items}
+    return data, img_path
 
 
 if __name__ == "__main__":
-    img, items = runner('test5.JPG')
-    print(items)
-    cv2.imshow("Image", img)
-    cv2.waitKey()
-    cv2.destroyAllWindows()
+    items, fn = runner('test6.JPG')
+    try:
+        print(items['error'])
+    except:
+        print(items['objects'])
+        im_bytes = base64.b64decode(items['image'])
+        im_arr = np.frombuffer(im_bytes, dtype=np.uint8)  # im_arr is one-dim Numpy array
+        img = cv2.imdecode(im_arr, flags=cv2.IMREAD_COLOR)
+        cv2.imshow("Image", img)
+        cv2.waitKey()
+        cv2.destroyAllWindows()
