@@ -7,7 +7,7 @@ import imutils
 # import objectifyer
     
 class measure():
-    def __init__(self, qr, img, focal_length, sf):
+    def __init__(self, qr, img, item_number):
         self.image = img
         self.txt = qr.data.decode()
         if self.txt.split(':')[0] == 'PaccuratePad':
@@ -22,23 +22,34 @@ class measure():
             # so at this depth, self.scale * pixels = dimension in inches
             height = img.shape[0]
             width = img.shape[1]
-            self.center = (float(width/2.0), float(height/2.0))
-            try:
-                if self.txt.split(':')[3] == 'Back':
-                    self.draw_circle((255, 0, 0))
-                else:
-                    self.draw_circle((0, 255, 0))
-            except IndexError:
-                self.draw_circle((0, 255, 0))
-            j = width/height
-            self.depth = self.depth_finder(self.image_width, self.real_width, j, 1, sf, width, focal_length)
+            self.item = True
+            if self.txt.split(':')[3] != 'Back':
+                self.draw_circle((255, 0, 0))
+                font = cv2.FONT_HERSHEY_SIMPLEX
+
+                my = 0
+                mx = 0
+                for p in self.points:
+                    mx += p[0]
+                    my += p[1]
+                mx = mx / 4
+                my = my / 4
+                bottomLeftCornerOfText = (int(mx) - 20, int(my) - 20)
+
+                fontScale = 10
+                fontColor = (255, 255, 255)
+                lineType = 30
+                cv2.putText(self.image, str(item_number), bottomLeftCornerOfText, font, fontScale, fontColor, lineType, cv2.LINE_AA)
+            else:
+                self.item = False
+            self.depth = self.depth_finder(self.image_width, self.real_width, width)
         else:
             valid = False
 
-    def depth_finder(self, object_width, real_width, j, k, scale_factor, image_width, focal_length):
-        print(object_width, real_width, j, k, scale_factor, image_width, focal_length)
-        real_image_width = j * math.sqrt( 43.27 / scale_factor ) / math.sqrt( math.pow(j, 2) * math.pow(k, 2) )
-        object_distance = focal_length * real_width / (object_width / real_image_width * image_width)
+    def depth_finder(self, object_width, real_width, width):
+        object_width = 3559 / width * object_width
+        perceived = (math.pi / 180 * 0.021315384) * object_width
+        object_distance = real_width / 2 / math.tan( perceived / 2 )
         return object_distance
     
     def get_corners(self, poly):
@@ -47,51 +58,56 @@ class measure():
         for corner in self.corners:
             (x2, y2) = corner
             self.points.append([x2, y2])
-        # print(self.points[0][0], self.points[0][1])
-        # print(self.points[1][0], self.points[1][1])
         self.image_width = math.sqrt( ((self.points[0][0] - self.points[1][0]) ** 2) + ((self.points[0][1] - self.points[1][1]) ** 2) )
 
     def draw_circle(self, colors):
         for n, p in enumerate(self.points):
-            cv2.circle(self.image, tuple(p), 25, colors, -1)
+            cv2.circle(self.image, tuple(p), 50, colors, -1)
 
-def get_focal_length(path):
+def get_zoom(path):
     s = subprocess.Popen(['exiftool', '-G', '-j', 'img-resources/{}'.format(path)], stdout=subprocess.PIPE)
     s = s.stdout.read().strip()
     s.decode('utf-8').rstrip('\r\n')
     md = json.loads(s)
-    fl = None
-    sf = None
+    zoom = 1
     for key in md[0]:
-        if 'focallength' in key.lower():
-            fl = md[0][key]
-        if 'scalefactor' in key.lower():
-            sf = float(md[0][key])
-    if fl is not None and sf is not None:
-        fl = float(fl.split()[0]) # convert mm to inches
-        fl = fl / 25.4
-    return fl, sf
+        if 'digitalzoomratio' in key.lower():
+            zoom = float(md[0][key])
+    return zoom
 
 def runner(img_path):
     img = cv2.imread('img-resources/{}'.format(img_path))
     if img.shape[1] < img.shape[0]:
         img = imutils.rotate_bound(img, 90)
-        print('rotated')
-    fl, sf = get_focal_length(img_path)
+    zoom = get_zoom(img_path)
     qr = decode(img)
+    background_depth = None
+    items = []
+    total = len(qr)
+    item_number = 0
     for q in qr:
-        m = measure(q, img, fl, sf)
+        m = measure(q, img, item_number)
         if m.valid:
             img = m.image
-            print(m.depth)
-    return img
+            if m.item:
+                # run Jainil code with m.points
+                # expects a width and length in pixels
+                # I'll just use the number of pixels in the QR code for now
+                w = m.image_width
+                h = m.image_width
+                # ^ change the above values for the pixel lengths of the actual box
+                items.append({'item_number': item_number, 'item_width': w * m.scale, 'item_height': h * m.scale, 'item_depth': m.depth})
+                item_number += 1
+            else:
+                background_depth = m.depth
+    for obj in items:
+        obj['item_depth'] = background_depth - obj['item_depth']
+    return img, items
 
 
-
-def main():
-    img = runner('work.JPG')
+if __name__ == "__main__":
+    img, items = runner('test1.JPG')
+    print(items)
     cv2.imshow("Image", img)
     cv2.waitKey()
     cv2.destroyAllWindows()
-
-main()
