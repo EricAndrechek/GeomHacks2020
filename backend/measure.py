@@ -163,19 +163,12 @@ def runner(img_path):
     _, im_arr = cv2.imencode('.jpg', img)
     im_bytes = im_arr.tobytes()
     im_b64 = base64.b64encode(im_bytes)
-    data = {'image': im_b64.decode(), 'objects': items}
+    data = {'image': 'data:image/jpeg;base64,{}'.format(im_b64.decode()), 'objects': items}
     return data, img_path
 
 
 if __name__ == "__main__":
     items, fn = runner('test6.JPG')
-    try:
-        print(items['error'])
-    except:
-        print(items['objects'])
-        im_bytes = base64.b64decode(items['image'])
-        im_arr = np.frombuffer(im_bytes, dtype=np.uint8)  # im_arr is one-dim Numpy array
-        img = cv2.imdecode(im_arr, flags=cv2.IMREAD_COLOR)
-        cv2.imshow("Image", img)
-        cv2.waitKey()
-        cv2.destroyAllWindows()
+    f = open('image.html', 'w')
+    # now u can just open image.html in your browser to see the image
+    f.write('<img src="{}">'.format(items['image']))

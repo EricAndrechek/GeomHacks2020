@@ -36,11 +36,5 @@ def upload_file():
             return jsonify(data)
 
 
-@app.route('/getjson', methods = ['POST'])
-@cross_origin()
-def getjson():
-    pass
-
-
 if __name__ == '__main__':
     app.run(debug = True, threaded=False)
